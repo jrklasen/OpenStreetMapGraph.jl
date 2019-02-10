@@ -13,5 +13,6 @@ export parseconditionaltag, parsecondition, parsetokentime, parsetokenday, parse
 include("load_save.jl")
 include("parse_tag.jl")
 include("oneway.jl")
+include("maxspeed.jl")
 
 end # module
