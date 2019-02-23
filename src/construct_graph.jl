@@ -1,4 +1,4 @@
-function refinenodes(osmdata)
+function osmgraph(osmdata)
     # find number of nodes in OSM data
     nnodes = 0
     for elem in osmdata["elements"]
@@ -12,7 +12,7 @@ function refinenodes(osmdata)
     nodeids = Dict{Integer, Integer}()
     # add meta data to nodes
     c = 1
-    for elem in osmdata["elements"]
+    for elem = osmdata["elements"]
         if elem["type"] == "node"
             MetaGraphs.set_props!(graph, c, Dict(:id => elem["id"],
                                                  :lon => elem["lon"],
@@ -21,6 +21,45 @@ function refinenodes(osmdata)
             c += 1
         end
     end
+    # add edges and edge meta data
+    for elem = data["elements"]
+        if elem["type"] == "way"
+            di = onewayinterpreter(elem)
+            nid = get(tags, "nodes", "_")
+            if nodes != "_"
+                nodes = [nodeids[i] for i = nid]
+                if nodes != "_" && di = "<>"
+                    for u, v = zip(nodes[1:(end-1)], nodes[2:end])
+                        add_edge!(graph, u, v)
+                        #set_prop!(graph, u, v, :weight)
+                        add_edge!(graph, v, u)
+                        #set_prop!(graph, v, u, :weight)
+                    end
+                elseif nodes != "_" && di = "->"
+                    for u, v = zip(nodes[1:(end-1)], nodes[2:end])
+                        add_edge!(graph, u, v)
+                        #set_prop!(graph, u, v, :weight)
+                    end
+                elseif nodes != "_" && di = "<-"
+                    for u, v = zip(nodes[1:(end-1)], nodes[2:end])
+                        add_edge!(graph, v, u)
+                        #set_prop!(graph, v, u, :weight)
+                    end
+                elseif nodes != "_" && di = ["h", "->", "<-"]
+                    for u, v = zip(nodes[1:(end-1)], nodes[2:end])
+                        add_edge!(graph, u, v)
+                        #set_prop!(graph, u, v, :weight)  #todo: at time condition
+                        #set_prop!(graph, u, v, :condition)
+                        add_edge!(graph, v, v)
+                        #set_prop!(graph, , 2, :weight)
+                        #set_prop!(graph, u, v, :condition)
+                    end
+                end
+           end
+        end
+    end
+ 
+
 
     return graph, nodeids
 end
