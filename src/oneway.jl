@@ -44,6 +44,7 @@ function onewayinterpreter(way::Dict)::AbstractArray{AbstractString, 1}
     return out
 end
 
+
 """ Interpretes the oneway:conditional part of the oneway information. Returns a dictinary.
 """
 function onewayconditionalinterpreter(onewayconditional::AbstractString)::Dict
@@ -59,10 +60,9 @@ function onewayconditionalinterpreter(onewayconditional::AbstractString)::Dict
                 @warn "A `oneway:conditional` tag containing one rule, where the value is not `yes`." value = condi1[:value]
             end
             rule = condi1[:rule1]
-            day, hour = onewayruleinterpreter(condi1[:rule1], true)
-            out[:hoursofday] = hour
-            if length(day) > 0
-                out[:daysofweek] = day
+            out[:hoursofday] = rule[:hoursofday]
+            if length(rule[:daysofweek]) > 0
+                out[:daysofweek] = rule[:daysofweek]
                 out[:oneway] = ["dh", "->", "<>"]
             else
                 out[:oneway] = ["h", "->", "<>"]
@@ -79,17 +79,17 @@ function onewayconditionalinterpreter(onewayconditional::AbstractString)::Dict
             if condi1[:value] != "yes"
                 @warn "A `oneway:conditional` tag where the value of the first rule is not `yes`." value = condi1[:value]
             end
-            out[:hoursofday1] = onewayruleinterpreter(condi1[:rule1])
+            out[:hoursofday1] = condi1[:rule1][:hoursofday]
         else
             @error "Handling `oneway:conditional` with more the one rule per condition is not implemented." condition = onewayconditional
         end
         condi2 = condition[condikeys[2]] 
         condi2keys = collect(keys(condi2))
         if length(condi2keys) == 2
-            if condi2[:value] != -1
+            if condi2[:value] != "-1"
                 @warn "A `oneway:conditional` tag where the value of the second rule is not `-1`." value = condi1[:value]
             end
-            out[:hoursofday2] = onewayruleinterpreter(condi2[:rule1])
+            out[:hoursofday2] = condi2[:rule1][:hoursofday]
         else
             @error "Handling `oneway:conditional` with more the one rule per condition is not implemented." condition = onewayconditional
         end
@@ -101,25 +101,4 @@ function onewayconditionalinterpreter(onewayconditional::AbstractString)::Dict
     end
     return out
 
-end
-
-""" Interpretes the condition time of a oneway conditional.
-"""
-function onewayruleinterpreter(rule::Dict, days::Bool=false)::AbstractArray 
-    if length(rule[:words]) > 0 || 
-            length(rule[:specialdays]) > 0
-        throw(ErrorException("Special conditions are not implemented: $rule"))
-    elseif length(rule[:hoursofday]) > 0
-        
-        hoursofday = rule[:hoursofday]
-
-        if days
-            daysofweek = rule[:daysofweek]
-            return [daysofweek, hoursofday]
-        else
-            return hoursofday
-        end
-    else
-        throw(ErrorException("A time condition is expected to be present."))
-    end
 end
