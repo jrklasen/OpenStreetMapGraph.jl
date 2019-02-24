@@ -1,12 +1,17 @@
 daysofweek = ["Mo", "Tu", "We", "Th", "Fr", "Sa","Su"]
 specialdays = ["PH", "SH"]
 
-""" Parse a conditional tag. Rturns a dictionary of complonents.
+
+"""Parse a conditional tag of the following structure:
+<restriction-value> @ <condition>[;<restriction-value> @ <condition>]
+
+Rturns a dictionary of complonents. 
 """
 function parseconditionaltag(conditionaltag::AbstractString)::Dict{Symbol, Dict}
     # regex for values: find value-pards of string
     regexvalue = r"\;?\s?(\-?[[:alnum:]\_\.]*)\s?@"
     values = collect(m.captures[1] for m = eachmatch(regexvalue, conditionaltag))
+
     # regex for condition: find codition-pards of string
     regexcondi1 = r"@\s?\(([[:alnum:]\s\;\:\,\.\-\<\>]+)\)\;?"
     regexcondi2 = r"@\s?([[:alnum:]\:\,\.\-\<\>]+\s?[[:alnum:]\:\,\.\-\<\>]+)\;?"
@@ -33,7 +38,7 @@ function parseconditionaltag(conditionaltag::AbstractString)::Dict{Symbol, Dict}
     out = Dict{Symbol, Dict}()
     count = 1
     for (v, c) = zip(values, condis)
-        valcondi = Dict{Symbol, Union{Dict, AbstractString, Integer}}(:value => parsevalue(v))
+        valcondi = Dict{Symbol, Union{Dict, AbstractString, Integer}}(:value => v)
         condi = parsecondition(c)
         keyscondi = collect(keys(condi))
         for k = keyscondi
@@ -48,6 +53,7 @@ function parseconditionaltag(conditionaltag::AbstractString)::Dict{Symbol, Dict}
     return out
 end 
 
+
 """ Parse condition part of a conditional tag.  Rturns a dictionary of complonents.
 """
 function parsecondition(condition::AbstractString)::Dict{Symbol, Dict}
@@ -57,15 +63,15 @@ function parsecondition(condition::AbstractString)::Dict{Symbol, Dict}
     count = 1
     for token = condis
         # todo: capture AND !!!!!!!
+        # haven't seen it in the tags of intrest, but it is part of the syntax
         daytimeword = Dict{Symbol, Union{AbstractArray, Dict}}(
-            :words => parsetokenword(token), 
-            :hoursofday => parsetokentime(token))
-
-        days = parsetokenday(token)
+            :words => parseconditionword(token), 
+            :hoursofday => parseconditiontime(token))
+        days = parseconditionday(token)
         daytimeword[:daysofweek] = days[:daysofweek]
         daytimeword[:specialdays] = days[:specialdays]
 
-        out[Symbol("rule" * string(count))]  = daytimeword
+        out[Symbol("rule" * string(count))] = daytimeword
 
         count += 1
     end
@@ -73,9 +79,10 @@ function parsecondition(condition::AbstractString)::Dict{Symbol, Dict}
     return out
 end
 
+
 """ Parse time (hour of day) component of the condition token as array of int.
 """
-function parsetokentime(token::AbstractString)::AbstractArray{Integer}
+function parseconditiontime(token::AbstractString)::AbstractArray{Integer}
     token = replace(token, "24:00" => "00:00")
     # one or more time intervals
     regextime = r"(\d{2}:\d{2})-(\d{2}:\d{2})"
@@ -103,10 +110,11 @@ function parsetokentime(token::AbstractString)::AbstractArray{Integer}
     return hoursofday
 end
 
+
 """ Parse the day component of the condition token. Return dict containng a array 
 of `daysofweek` as numbers between 1  (Mo) and 7 (Su) and `specialdays` array of strings.
 """
-function parsetokenday(token::AbstractString)::Dict{Symbol, AbstractArray}
+function parseconditionday(token::AbstractString)::Dict{Symbol, AbstractArray}
     regexdayint = r"(Mo|Tu|We|Th|Fr|Sa|Su)-(Mo|Tu|We|Th|Fr|Sa|Su)"
     dayinterval = match(regexdayint, token)
     if dayinterval != nothing
@@ -141,22 +149,12 @@ function parsetokenday(token::AbstractString)::Dict{Symbol, AbstractArray}
     return Dict{Symbol, AbstractArray}(:daysofweek => days, :specialdays => sdays)
 end
 
+
 """ Find special word in condition token. Return array of Strings
 """
-function parsetokenword(token::AbstractString)::AbstractArray{AbstractString, 1}
+function parseconditionword(token::AbstractString)::AbstractArray{AbstractString, 1}
     regexword = r"(off|signal)"
     words = collect(string(m.captures[1]) for m = eachmatch(regexword, token))
 
     return words
-end
-
-""" Try parsing value token as `Int`, else return the String
-"""
-function parsevalue(token::AbstractString)::Union{AbstractString, Integer}
-    out = tryparse(Int, token)
-    if out != nothing
-        return out
-    else
-        return token
-    end
 end
