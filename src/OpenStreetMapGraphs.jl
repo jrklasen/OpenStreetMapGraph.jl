@@ -7,8 +7,10 @@ import LightGraphs
 import MetaGraphs
 
 export overpassquery, overpass
+export parseconditionaltag, parsecondition, parseconditiontime, parseconditionday, parseconditionword
 export onewayinterpreter, onewayconditionalinterpreter
-export parseconditionaltag, parsecondition, parsetokentime, parsetokenday, parsetokenword
+export maxspeedinterpreter, maxspeedconditionalinterpreter
+
 
 include("load_save.jl")
 include("parse_tag.jl")
