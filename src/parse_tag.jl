@@ -82,7 +82,7 @@ end
 
 """ Parse time (hour of day) component of the condition token as array of int.
 """
-function parseconditiontime(token::AbstractString)::AbstractArray{Integer}
+function parseconditiontime(token::AbstractString)::AbstractArray{UInt8}
     token = replace(token, "24:00" => "00:00")
     # one or more time intervals
     regextime = r"(\d{2}:\d{2})-(\d{2}:\d{2})"
@@ -92,19 +92,19 @@ function parseconditiontime(token::AbstractString)::AbstractArray{Integer}
         endtimes = [i == 0 ? 24 : i for i = endtimes]
         if length(starttimes) > 1 &&  
                 issorted([i for j = zip(starttimes, endtimes) for i = j])
-            hoursofday =  [i for (s, e) = zip(starttimes, endtimes) for i in collect(s:(e-1))]
+            hoursofday =  UInt8[i for (s, e) = zip(starttimes, endtimes) for i in collect(s:(e-1))]
         elseif length(starttimes) == 1
             if starttimes[1] > endtimes[1] 
-                hoursofday = [collect(0:(endtimes[1]-1)); collect(starttimes[1]:23)]
+                hoursofday = [collect(UInt8, 0:(endtimes[1]-1)); collect(UInt8, starttimes[1]:23)]
             else
-                hoursofday = collect(starttimes[1]:(endtimes[1]-1))
+                hoursofday = collect(UInt8, starttimes[1]:(endtimes[1]-1))
             end
         else
             throw(ErrorException("The time part of the condition can't be interpreted: $token"))
         end
 
     else
-        hoursofday = Int[]
+        hoursofday = UInt8[]
     end
     
     return hoursofday
@@ -121,22 +121,22 @@ function parseconditionday(token::AbstractString)::Dict{Symbol, AbstractArray}
         firstday = findfirst(dayinterval.captures[1] .== daysofweek)
         lastday = findfirst(dayinterval.captures[2] .== daysofweek)
         if firstday <= lastday 
-            days = collect(firstday:lastday)
-            sdays = Int[]
+            days = collect(UInt8, firstday:lastday)
+            sdays = String[]
         else 
-            days = [collect(1:lastday); collect(firstday:7)]
-            sdays = Int[]
+            days = [collect(UInt8, 1:lastday); collect(UInt8, firstday:7)]
+            sdays = String[]
         end
     else
         regexdaycol = r"(Mo|Tu|We|Th|Fr|Sa|Su|PH)"
         dayscolect = collect(string(m.captures[1]) for m = eachmatch(regexdaycol, token))
-        days = Int[]
+        days = UInt8[]
         sdays = String[]
         if length(dayscolect) > 0
             for dc = dayscolect
                 d = findfirst(dc .== daysofweek)
                 if d != nothing
-                    days = [days; d]
+                    days = UInt8[days; d]
                 end
                 sd = specialdays[dc .== specialdays]
                 if sd != nothing

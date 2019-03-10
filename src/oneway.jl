@@ -8,7 +8,8 @@ function onewayinterpreter(way::Dict)::AbstractArray{AbstractString, 1}
     tags = get(way, "tags", "_")
     if tags != "_"
         oneway = get(tags, "oneway", "_")
-        onewayconditional = get(tags, "oneway:conditional", "_")
+        # interpret conditional oneway tag
+         onewayconditional = get(tags, "oneway:conditional", "_")
         if onewayconditional != "_"
             varoneway = onewayconditionalinterpreter(onewayconditional)
             out = varoneway[:oneway]
@@ -23,7 +24,7 @@ function onewayinterpreter(way::Dict)::AbstractArray{AbstractString, 1}
             out =  ["<-"]
         elseif oneway == "no" || oneway == "alternating"
             out = ["<>"]
-        elseif oneway == "reversible" # if a street is reversible but has not condition drop it
+        elseif oneway == "reversible" # if a street is reversible but has no condition, drop it
             out = ["x"]
             # if not marked as oneway but one of the following tags is given, make as oneway
         elseif oneway == "_" && any(get(tags, "junction", "_") .== ["roundabout", "circular"])
@@ -52,21 +53,24 @@ function onewayconditionalinterpreter(onewayconditional::AbstractString)::Dict
     condikeys = collect(keys(condition))
     out = Dict()
     if length(condikeys) == 1
-        # oneway or twoway
+        # conditional switch between oneway and twoway
         condi1 = condition[condikeys[1]] 
         condi1keys = collect(keys(condi1))
         if length(condi1keys) == 2
             if condi1[:value] != "yes"
-                @warn "A `oneway:conditional` tag containing one rule, where the value is not `yes`." value = condi1[:value]
+                @error "A `oneway:conditional` tag is containing one rule and the value is not `yes`." value = condi1[:value]
             end
-            rule = condi1[:rule1]
-            out[:hoursofday] = rule[:hoursofday]
-            if length(rule[:daysofweek]) > 0
-                out[:daysofweek] = rule[:daysofweek]
-                out[:oneway] = ["dh", "->", "<>"]
-            else
-                out[:oneway] = ["h", "->", "<>"]
-            end
+            uvweight = missing
+            vuweight = repeat(Union{Real,Missing}[missing], 168)
+            vuweight[hoursofweek(condi1[:rule1][:daysofweek], condi1[:rule1][:hoursofday]) .+ 1] .= Inf
+            #out[:hoursofday] = rule[:hoursofday]
+            #if length(rule[:daysofweek]) > 0
+                #out[:vu][:condition1][:daysofweek] = rule[:daysofweek]
+                # out[:daysofweek] = rule[:daysofweek]
+                # out[:oneway] = ["dh", "->", "<>"]
+            # else
+            #     out[:oneway] = ["h", "->", "<>"]
+            #end
         else
             @error "Handling `oneway:conditional` with more the one rule per condition is not implemented." condition = onewayconditional
         end
@@ -75,30 +79,67 @@ function onewayconditionalinterpreter(onewayconditional::AbstractString)::Dict
         # reversal oneway
         condi1 = condition[condikeys[1]] 
         condi1keys = collect(keys(condi1))
+        uvweight = repeat(Union{Real,Missing}[Inf], 168)
         if length(condi1keys) == 2
             if condi1[:value] != "yes"
-                @warn "A `oneway:conditional` tag where the value of the first rule is not `yes`." value = condi1[:value]
+                @error "A `oneway:conditional` tag where the value of the first rule is not `yes`." value = condi1[:value]
             end
-            out[:hoursofday1] = condi1[:rule1][:hoursofday]
+            uvweight[hoursofweek(condi1[:rule1][:daysofweek], condi1[:rule1][:hoursofday]) .+ 1] .= 12#missing
+            # out[:hoursofday1] = condi1[:rule1][:hoursofday]
         else
             @error "Handling `oneway:conditional` with more the one rule per condition is not implemented." condition = onewayconditional
         end
+
         condi2 = condition[condikeys[2]] 
         condi2keys = collect(keys(condi2))
+        vuweight = repeat(Union{Real,Missing}[Inf], 168)
         if length(condi2keys) == 2
             if condi2[:value] != "-1"
-                @warn "A `oneway:conditional` tag where the value of the second rule is not `-1`." value = condi1[:value]
+                @error "A `oneway:conditional` tag where the value of the second rule is not `-1`." value = condi1[:value]
             end
-            out[:hoursofday2] = condi2[:rule1][:hoursofday]
+            vuweight[hoursofweek(condi2[:rule1][:daysofweek], condi2[:rule1][:hoursofday]) .+ 1] .= 11#missing
+            # out[:hoursofday2] = condi2[:rule1][:hoursofday]
         else
             @error "Handling `oneway:conditional` with more the one rule per condition is not implemented." condition = onewayconditional
         end
-        if length(Set([out[:hoursofday1]; out[:hoursofday2]])) == 24
-            out[:oneway] = ["h", "->", "<-"] 
-        else
-            @warn "It is expected that a reversible oneway tags covers 24 hours, which is not the case here." condition = onewayconditional
-        end
+        # if length(Set([out[:hoursofday1]; out[:hoursofday2]])) == 24
+        #     out[:oneway] = ["h", "->", "<-"] 
+        # else
+        #     @warn "It is expected that a reversible oneway tags covers 24 hours, which is not the case here." condition = onewayconditional
+        # end
     end
+    out = Dict{Symbol, Dict}(
+        :uv => Dict{Symbol,Union{Real,Missing,Array{Union{Real,Missing},1}}}(
+            :weight => uvweight),
+        :vu => Dict{Symbol,Union{Real,Missing,Array{Union{Real,Missing},1}}}(
+            :weight => vuweight) )
     return out
 
+end
+
+
+function hoursofweek(days::Array{<:Integer,1}=Integer[], hours::Array{<:Integer,1}=Integer[])::Array{UInt8,1}
+    nd = length(days)
+    nh = length(hours)
+    
+    if nd == 0
+        days = collect(UInt8, 1:7)
+        nd = length(days)
+    end
+    daysashours = (days .- 1) .* 24
+    
+    if nh == 0
+        hours = collect(UInt8, 0:23)
+        nh = length(hours)
+    end
+    
+    # hours per day
+    out = reshape((daysashours' .+ hours), nd * nh)
+
+    return out
+end
+
+
+function inversehoursofweek(hours::Array{<:Integer,1}=Integer[])::Array{UInt8,1}
+    return setdiff(hoursofweek(), hours)
 end

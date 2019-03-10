@@ -8,7 +8,7 @@ import MetaGraphs
 
 export overpassquery, overpass
 export parseconditionaltag, parsecondition, parseconditiontime, parseconditionday, parseconditionword
-export onewayinterpreter, onewayconditionalinterpreter
+export onewayinterpreter, onewayconditionalinterpreter, hourofweek, inversehourofweek
 export maxspeedinterpreter, maxspeedconditionalinterpreter
 
 
