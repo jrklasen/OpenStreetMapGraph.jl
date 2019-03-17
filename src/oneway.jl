@@ -1,6 +1,9 @@
+const OnewayDict = Dict{Symbol,Union{Real,Missing,Array{Union{Real,Missing},1}}}
+
+
 """ Interpretes the oneway tags of a OSM way object. Returns an array of strings.
 """
-function onewayinterpreter(way::Dict)::Dict
+function oneway(way::Dict)::Dict
     if way["type"] != "way"
         throw(ArgumentError("`way` must be an OSM way object."))
     end
@@ -11,7 +14,7 @@ function onewayinterpreter(way::Dict)::Dict
          onewayconditional = get(tags, "oneway:conditional", "_")
         if onewayconditional != "_"
             # interpret conditional oneway tag
-            out = onewayconditionalinterpreter(onewayconditional)
+            out = parseonewayconditional(onewayconditional)
             # ckeck if oneway and oneway:conditional match
             if !(oneway == "reversible" || (oneway == "no" || oneway == "_"))
                 @warn "The `oneway` and `oneway:conditional` tag are conflicting." oneway = oneway condition = out
@@ -19,26 +22,26 @@ function onewayinterpreter(way::Dict)::Dict
 
         # common streets
         elseif oneway == "no" || oneway == "alternating"
-            out = Dict{Symbol, Dict}(:uv => Dict{Symbol,Union{Real,Missing,Array{Union{Real,Missing},1}}}(:weight => missing),
-                                     :vu => Dict{Symbol,Union{Real,Missing,Array{Union{Real,Missing},1}}}(:weight => missing) )
+            out = Dict{Symbol, Dict}(:uv => OnewayDict(:weight => missing),
+                                     :vu => OnewayDict(:weight => missing) )
 
         # oneway streets
         elseif oneway == "yes"
-            out = Dict{Symbol, Dict}(:uv => Dict{Symbol,Union{Real,Missing,Array{Union{Real,Missing},1}}}(:weight => missing) )
+            out = Dict{Symbol, Dict}(:uv => OnewayDict(:weight => missing) )
         elseif oneway == "-1"
-            out = Dict{Symbol, Dict}(:vu => Dict{Symbol,Union{Real,Missing,Array{Union{Real,Missing},1}}}(:weight => missing) )
+            out = Dict{Symbol, Dict}(:vu => OnewayDict(:weight => missing) )
         elseif oneway == "reversible"
             out = Dict{Symbol, Dict}()
             @warn "A `way` with a `reversible` tag but without a `oneway:conditional` tag was discovered, it is ignored." ID=way["id"]
         
         # if not marked as oneway but one of the following tags is given, it is oneway
         elseif oneway == "_" && any(get(tags, "junction", "_") .== ["roundabout", "circular"])
-            out = Dict{Symbol, Dict}(:uv => Dict{Symbol,Union{Real,Missing,Array{Union{Real,Missing},1}}}(:weight => missing) )
+            out = Dict{Symbol, Dict}(:uv => OnewayDict(:weight => missing) )
         elseif oneway == "_" && get(tags, "highway", "_") == "motorway"
-            out = Dict{Symbol, Dict}(:uv => Dict{Symbol,Union{Real,Missing,Array{Union{Real,Missing},1}}}(:weight => missing) )
+            out = Dict{Symbol, Dict}(:uv => OnewayDict(:weight => missing) )
         elseif oneway == "_"
-            out = Dict{Symbol, Dict}(:uv => Dict{Symbol,Union{Real,Missing,Array{Union{Real,Missing},1}}}(:weight => missing),
-                                     :vu => Dict{Symbol,Union{Real,Missing,Array{Union{Real,Missing},1}}}(:weight => missing) )
+            out = Dict{Symbol, Dict}(:uv => OnewayDict(:weight => missing),
+                                     :vu => OnewayDict(:weight => missing) )
         
         else
             out = Dict{Symbol, Dict}()
@@ -56,7 +59,7 @@ end
 
 """ Interpretes the oneway:conditional part of the oneway information. Returns a dictinary.
 """
-function onewayconditionalinterpreter(onewayconditional::AbstractString)::Dict
+function parseonewayconditional(onewayconditional::AbstractString)::Dict
     condition = parseconditionaltag(onewayconditional)
     condikeys = collect(keys(condition))
     if length(condikeys) == 1
@@ -107,8 +110,8 @@ function onewayconditionalinterpreter(onewayconditional::AbstractString)::Dict
             @error "Handling `oneway:conditional` with more the one rule per condition is not implemented." condition = onewayconditional
         end
     end
-    out = Dict{Symbol, Dict}(:uv => Dict{Symbol,Union{Real,Missing,Array{Union{Real,Missing},1}}}(:weight => uvweight),
-                             :vu => Dict{Symbol,Union{Real,Missing,Array{Union{Real,Missing},1}}}(:weight => vuweight) )
+    out = Dict{Symbol, Dict}(:uv => OnewayDict(:weight => uvweight),
+                             :vu => OnewayDict(:weight => vuweight) )
 
     return out
 end
