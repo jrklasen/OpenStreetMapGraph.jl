@@ -7,28 +7,29 @@ specialdays = ["PH", "SH"]
 
 Rturns a dictionary of complonents. 
 """
-function parseconditionaltag(conditionaltag::AbstractString)::Dict{Symbol, Dict}
-    # regex for values: find value-pards of string
+function parseconditionaltag(tag::AbstractString)::Dict{Symbol, Dict}
+    # regex for values: find value-parts of string
     regexvalue = r"\;?\s?(\-?[[:alnum:]\_\.]*)\s?@"
-    values = collect(m.captures[1] for m = eachmatch(regexvalue, conditionaltag))
+    values = collect(m.captures[1] for m = eachmatch(regexvalue, tag))
 
-    # regex for condition: find codition-pards of string
+    # regex for condition: find codition-parts of string
     regexcondi1 = r"@\s?\(([[:alnum:]\s\;\:\,\.\-\<\>]+)\)\;?"
     regexcondi2 = r"@\s?([[:alnum:]\:\,\.\-\<\>]+\s?[[:alnum:]\:\,\.\-\<\>]+)\;?"
-    condis = [collect(m.captures[1] for m = eachmatch(regexcondi1, conditionaltag)); 
-              collect(m.captures[1] for m = eachmatch(regexcondi2, conditionaltag))]
+    condis = [collect(m.captures[1] for m = eachmatch(regexcondi1, tag)); 
+              collect(m.captures[1] for m = eachmatch(regexcondi2, tag))]
     values = [string(i) for i = values]
     condis = [string(i) for i = condis]
 
-    # check if result is plausible if validatetokens=ture
+    # check if result is plausible 
+    # todo: allow turning this off, as it is costly
     if length(values) == length(condis)
-        norg = length(conditionaltag)
-        norgspe = sum(length.(findall.(isequal.(['@', ';', '(', ')', ' ']), conditionaltag)))
+        norg = length(tag)
+        norgspe = sum(length.(findall.(isequal.(['@', ';', '(', ')', ' ']), tag)))
         nres = sum([length.(i) for i in [values; condis]])
         nresspe = sum([sum(length.(findall.(isequal.([';', ' ']), i))) for i = [values; condis]])
         mengthmatch = norg - (nres + norgspe - nresspe)
         if mengthmatch != 0
-            @error "The tokenizer of the conditional tags resulted in an implausible character count" condition=conditionaltag tokens=[values, condis]
+            @error "The tokenizer of the conditional tags resulted in an implausible character count" condition=tag tokens=[values, condis]
         end
     else
         @error "The number of value and condition tokens don't match" values=values conditions=condis
@@ -38,14 +39,10 @@ function parseconditionaltag(conditionaltag::AbstractString)::Dict{Symbol, Dict}
     out = Dict{Symbol, Dict}()
     count = 1
     for (v, c) = zip(values, condis)
-        valcondi = Dict{Symbol, Union{Dict, AbstractString, Integer}}(:value => v)
-        condi = parsecondition(c)
-        keyscondi = collect(keys(condi))
-        for k = keyscondi
-            valcondi[k] = condi[k]
-        end
-
-        out[Symbol("condition" * string(count))] = valcondi
+        out[Symbol("condition" * string(count))] =  Dict{Symbol, Union{Dict, AbstractString, Integer}}(
+            :value => v, 
+            :rules => parsecondition(c)
+        )
 
         count += 1
     end
@@ -54,7 +51,7 @@ function parseconditionaltag(conditionaltag::AbstractString)::Dict{Symbol, Dict}
 end 
 
 
-""" Parse condition part of a conditional tag.  Rturns a dictionary of complonents.
+""" Parse condition part of a conditional tag.  Returns a rules as dictionary.
 """
 function parsecondition(condition::AbstractString)::Dict{Symbol, Dict}
     condis = strip.(split(condition, ';'))
@@ -64,13 +61,13 @@ function parsecondition(condition::AbstractString)::Dict{Symbol, Dict}
     for token = condis
         # todo: capture AND !!!!!!!
         # haven't seen it in the tags of intrest, but it is part of the syntax
+        days = parseconditionday(token)
         daytimeword = Dict{Symbol, Union{AbstractArray, Dict}}(
             :words => parseconditionword(token), 
-            :hoursofday => parseconditiontime(token))
-        days = parseconditionday(token)
-        daytimeword[:daysofweek] = days[:daysofweek]
-        daytimeword[:specialdays] = days[:specialdays]
-
+            :hoursofday => parseconditiontime(token),
+            :daysofweek => days[:daysofweek],
+            :specialdays => days[:specialdays]
+        )
         out[Symbol("rule" * string(count))] = daytimeword
 
         count += 1
@@ -153,8 +150,42 @@ end
 """ Find special word in condition token. Return array of Strings
 """
 function parseconditionword(token::AbstractString)::AbstractArray{AbstractString, 1}
-    regexword = r"(off|signal)"
+    regexword = r"(off|signal|wet)"
     words = collect(string(m.captures[1]) for m = eachmatch(regexword, token))
 
     return words
+end
+
+
+#++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++#
+""" Use day of week and hour of day and return the hour of week
+"""
+function hoursofweek(
+        hours::Array{<:Integer,1}=Integer[],
+        days::Array{<:Integer,1}=Integer[], 
+        specialdays::Array{<:AbstractString,1}=AbstractString[]
+    )::Array{UInt8,1}
+    nd = length(days)
+    nh = length(hours)
+    nsd = length(specialdays)
+
+    # if days and hours are empty return empty array
+    # if days are empty but specialdays are not, return empty array
+    if nd == 0 && nh == 0 || nd == 0 && nsd != 0
+        return Array{UInt8,1}[]
+    # if only days are empty generate all days
+    elseif nd == 0 && nsd == 0
+        days = collect(UInt8, 1:7)
+        nd = length(days)
+    # if hours are empty generate all hours
+    elseif nh == 0
+        hours = collect(UInt8, 0:23)
+        nh = length(hours)
+    end
+    daysashours = (days .- 1) .* 24
+    
+    # hours per day
+    out = reshape((daysashours' .+ hours), nd * nh)
+
+    return out
 end

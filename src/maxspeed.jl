@@ -1,49 +1,90 @@
-maxspeedword = Dict(:none=>130, 
-                    :motorway=>130, 
-                    :signals=>nothing, # nothing is replased by highway 
-                    :rural=>100, 
-                    :trunk=>100, 
-                    :urban=>50, 
-                    :bicycle_road=>30, 
-                    :walk=>7)
+# A dictionary of speed limits for interpreting the `maxspeedword`
+maxspeedword = Dict(
+    :none => 130, 
+    :motorway => 130, 
+    :signals => nothing, # nothing is replased by highway 
+    :sign => nothing, # nothing is replased by highway 
+    :rural => 100, 
+    :trunk => 100, 
+    :urban => 50, 
+    :bicycle_road => 30, 
+    :walk => 7
+)
 
-# a list of maxspeeds for highway types (in this case for germany)
-highwaymaxspeed = Dict(:rural=>Dict(:motorway=>130, 
-                                    :link=>80, 
-                                    :trunk=>100, 
-                                    :primary=>100, 
-                                    :secondary=>100, 
-                                    :tertiary=>100, 
-                                    :unclassified=>100, 
-                                    :residential=>100, 
-                                    :living_street=>7,
-                                    :service=>30),
-                       :urban=>Dict(:motorway=>130, 
-                                    :link=>80, 
-                                    :trunk=>50, 
-                                    :primary=>50, 
-                                    :secondary=>50, 
-                                    :tertiary=>50, 
-                                    :unclassified=>50, 
-                                    :residential=>50, 
-                                    :living_street=>7,
-                                    :service=>30))
+# A dictionary of speed limits for `highway` types (in this case for germany)
+highwaymaxspeed = Dict(
+    :rural => Dict(
+        :motorway => 130, 
+        :link => 80, 
+        :trunk => 100, 
+        :primary => 100, 
+        :secondary => 100, 
+        :tertiary => 100, 
+        :unclassified => 100, 
+        :residential => 100, 
+        :living_street => 7,
+        :service => 30
+    ),
+    :urban => Dict(
+        :motorway => 130, 
+        :link => 80, 
+        :trunk => 50, 
+        :primary => 50, 
+        :secondary => 50, 
+        :tertiary => 50, 
+        :unclassified => 50, 
+        :residential => 50, 
+        :living_street => 7,
+        :service => 30
+    )
+)
 
-function maxspeedinterpreter(waytags, maxspeedword=maxspeedword, urban=true, highwaymaxspeed=highwaymaxspeed)
-    
-    out = Dict{Symbol, Union{Dict, Integer}}()
+
+"""for now we ignore special days  
+hour per week granularity
+"""
+function maxspeedinterpreter(
+        waytags, 
+        maxspeedword=maxspeedword, 
+        urban=true, 
+        highwaymaxspeed=highwaymaxspeed
+    )::Dict{Symbol, Union{AbstractArray, Real}}
+
+    maxspeed = parsemaxspeedkeys(
+        waytags, 
+        maxspeedword,
+        "both", 
+        urban, 
+        highwaymaxspeed
+    )
     maxspeedtagconditional = get(waytags, "maxspeed:conditional", "_")
     if maxspeedtagconditional != "_"
-        out[:condition] = maxspeedconditionalinterpreter(maxspeedtagconditional)
+        if maxspeed == nothing
+            maxspeed = missing
+        end
+        maxspeed = maxspeedconditionalinterpreter(maxspeedtagconditional, maxspeed)
     end
-    maxspeedforward = parsemaxspeedkes(waytags, maxspeedword, "forward", urban, highwaymaxspeed)
-    maxspeedbackward = parsemaxspeedkes(waytags, maxspeedword, "backward", urban, highwaymaxspeed)
-    maxspeed = parsemaxspeedkes(waytags, maxspeedword, "both", urban, highwaymaxspeed)
-    if maxspeedforward != nothing
-        out[:maxspeedforward] = maxspeedforward
+    uvmaxspeed = parsemaxspeedkeys(
+        waytags, 
+        maxspeedword, 
+        "forward", 
+        urban, 
+        highwaymaxspeed
+    )
+    vumaxspeed = parsemaxspeedkeys(
+        waytags, 
+        maxspeedword, 
+        "backward", 
+        urban, 
+        highwaymaxspeed
+    )
+
+    out = Dict{Symbol, Union{AbstractArray, Real}}()
+    if uvmaxspeed != nothing
+        out[:uvmaxspeed] = uvmaxspeed
     end
-    if maxspeedbackward != nothing
-        out[:maxspeedbackward] = maxspeedbackward
+    if vumaxspeed != nothing
+        out[:vumaxspeed] = vumaxspeed
     end
     if maxspeed != nothing
         out[:maxspeed] = maxspeed
@@ -55,109 +96,35 @@ end
 
 """
 """
-function maxspeedconditionalinterpreter(maxspeedconditional::AbstractString, maxspeedword::Dict=maxspeedword)
-    condition = parseconditionaltag(maxspeedconditional)
-    condikeys = collect(keys(condition))
-    out = Dict{Symbol, Union{AbstractArray, Integer}}()
-    if length(condikeys) == 1
-        # oneway or twoway
-        condi1 = condition[condikeys[1]] 
-        condi1keys = collect(keys(condi1))
-        value = parsemaxspeed(condi1[:value], maxspeedword)
-        if length(condi1keys) == 2
-            rule = condi1[:rule1]
-            if length(rule[:hoursofday]) > 0 && length(rule[:daysofweek]) > 0 
-                out[:hoursofday] = rule[:hoursofday]
-                out[:daysofweek] = rule[:daysofweek]
-                out[:maxspeed] = value
-            elseif length(rule[:daysofweek]) > 0
-                out[:daysofweek] = rule[:daysofweek]
-                out[:maxspeed] = value
-            elseif length(rule[:hoursofday]) > 0
-                out[:hoursofday] = rule[:hoursofday]
-                out[:maxspeed] = value
-            end
-        elseif length(condi1keys) == 3
-            # for now we ignore special days 
-            rule1 = condi1[:rule1]
-            rule2 = condi1[:rule2]
-            if rule2[:words] == ["off"]
-                days = rule2[:daysofweek]
-                if length(days) > 0
-                    inversedays = sort(collect(setdiff(Set(1:7), Set(days))))
-                    if length(rule1[:hoursofday]) > 0
-                        out[:hoursofday] = rule1[:hoursofday]
-                        out[:daysofweek] = inversedays
-                        out[:maxspeed] = value
-                    end
-                else
-                    if length(rule1[:hoursofday]) > 0 && length(rule1[:daysofweek]) > 0 
-                        out[:hoursofday] = rule[:hoursofday]
-                        out[:daysofweek] = rule[:daysofweek]
-                        out[:maxspeed] = value
-                    elseif length(rule1[:daysofweek]) > 0
-                        out[:daysofweek] = rule1[:daysofweek]
-                        out[:maxspeed] = value
-                    elseif length(rule1[:hoursofday]) > 0
-                        out[:daysofweek] = rule1[:daysofweek]
-                        out[:maxspeed] = value
-                    end
-                end
-            else
-                @warn "A `maxspeed:conditional` tag containing the following word which cannot yet been parsed." word = rule2[:words]
-            end
-        else
-            @warn "A `maxspedd:conditional` tag containing more than 2 rules, cant be handelt yet." condition = condi1
-        end
-    elseif length(condikeys) == 2
-        # reversal oneway
-                # oneway or twoway
-        condi1 = condition[condikeys[1]] 
-        condi1keys = collect(keys(condi1))
-        value1 = parsemaxspeed(condi1[:value], maxspeedword)
-        if length(condi1keys) == 2
-            rule1 = condi1[:rule1]
-            if length(rule1[:hoursofday]) > 0 && length(rule1[:daysofweek]) > 0 
-                out[:hoursofday1] = rule1[:hoursofday]
-                out[:daysofweek1] = rule1[:daysofweek]
-                out[:maxspeed1] = value1
-            elseif length(rule1[:daysofweek]) > 0
-                out[:daysofweek1] = rule1[:daysofweek]
-                out[:maxspeed1] = value1
-            elseif length(rule1[:hoursofday]) > 0
-                out[:daysofweek1] = rule1[:daysofweek]
-                out[:maxspeed1] = value1
-            end
-        else
-            @error "Handling `maxspeed:conditional` tow conition and more the one rule per condition is not implemented." condition = condi1
-        end
-        condi2 = condition[condikeys[2]] 
-        condi2keys = collect(keys(condi2))
-        value2 = parsemaxspeed(condi1[:value], maxspeedword)
-        if length(condi2keys) == 2
-            rule2 = condi2[:rule2]
-            if length(rule2[:hoursofday]) > 0 && length(rule2[:daysofweek]) > 0 
-                out[:hoursofday2] = rule2[:hoursofday]
-                out[:daysofweek2] = rule2[:daysofweek]
-                out[:maxspeed2] = value2
-            elseif length(rule2[:daysofweek]) > 0
-                out[:daysofweek2] = rule2[:daysofweek]
-                out[:maxspeed2] = value2
-            elseif length(rule2[:hoursofday]) > 0
-                out[:daysofweek2] = rule2[:daysofweek]
-                out[:maxspeed2] = value2
-            end
-        else
-            @error "Handling `maxspeed:conditional` tow conition and more the one rule per condition is not implemented." condition = condi2
-        end
+function maxspeedconditionalinterpreter(
+        maxspeedconditional::AbstractString, 
+        maxspeed::Union{Real,Missing}=missing,
+        maxspeedword::Dict=maxspeedword
+    )
+    conditions = parseconditionaltag(maxspeedconditional)
+    condikeys = collect(keys(conditions))
+
+    maxspeed = repeat(Union{Real,Missing}[maxspeed], 168)
+    for c = condikeys
+        condi = conditions[c]
+        value = parsemaxspeed(condi[:value], maxspeedword)
+        hours = ruleshursofweek(condi[:rules])
+        maxspeed[hours .+ 1] .=  value
     end
-    return out
+    return maxspeed
 
 end
 
+
 """ Search for  tags which give the maxspeed of a way
 """
-function parsemaxspeedkes(waytags, maxspeedword=maxspeedword, direction="both", urban=true, highwaymaxspeed=highwaymaxspeed)
+function parsemaxspeedkeys(
+        waytags, 
+        maxspeedword=maxspeedword, 
+        direction="both", 
+        urban=true, 
+        highwaymaxspeed=highwaymaxspeed
+    )::Union{Real, Nothing}
     # if direction is given check for directional maxspeed
     if direction == "forward"
         dir = ":forward"
@@ -200,7 +167,10 @@ end
 
 """ maxspeed tag as number
 """
-function parsemaxspeed(token::AbstractString, maxspeedword=maxspeedword)
+function parsemaxspeed(
+        token::AbstractString, 
+        maxspeedword=maxspeedword
+    )::Union{Real, Nothing}
     regexmaxspeednumber = r"(\d+)"
     number = match(regexmaxspeednumber, token)
     if number != nothing
@@ -221,13 +191,17 @@ function parsemaxspeed(token::AbstractString, maxspeedword=maxspeedword)
             end
         end
     else
-        regexmaxspeedword = r"(none|no|motorway|signals|trunk|rural|urban|bicycle_road|walk|living_street)"
+        regexmaxspeedword = r"(none|no|motorway|signals|sign|trunk|rural|urban|bicycle_road|walk|living_street)"
         word = match(regexmaxspeedword, token)
-        if word.match == "none" || word.match == "no"
+        if word == nothing
+            return nothing
+        elseif word.match == "none" || word.match == "no"
             return maxspeedword[:none]
         elseif word.match == "motorway"
             return maxspeedword[:motorway]
         elseif word.match == "signals"
+            return maxspeedword[:signals]
+        elseif word.match == "sign"
             return maxspeedword[:signals]
         elseif word.match == "rural"
             return maxspeedword[:rural]
@@ -248,7 +222,11 @@ end
 
 """ Use the highway tag to gess the maxspeed
 """
-function parsehighwaymaxspeed(token::AbstractString, urban=true, highwaymaxspeed=highwaymaxspeed)
+function parsehighwaymaxspeed(
+        token::AbstractString, 
+        urban=true, 
+        highwaymaxspeed=highwaymaxspeed
+    )::Union{Real, Nothing}
     condkey = urban ? :urban : :rural
     regexhighway = r"(link|motorway|trunk|primary|secondary|tertiary|unclassified|residential|living_street|service)"
     word = match(regexhighway, token)
@@ -278,4 +256,28 @@ function parsehighwaymaxspeed(token::AbstractString, urban=true, highwaymaxspeed
             return nothing
         end
     end
+end
+
+
+""" Join rules to hours of week
+"""
+function ruleshursofweek(rules)
+    ruleskeys = collect(keys(rules))
+
+    hours = Integer[]
+    # one condition with r rules
+    for r = ruleskeys
+        rule = rules[r]
+        h = hoursofweek(rule[:hoursofday], rule[:daysofweek], rule[:specialdays])
+        if rule[:words] == ["off"]
+            setdiff!(hours, h)
+        elseif rule[:words] == ["signal"] || rule[:words] == ["wet"]
+            # leave `hours` as is
+        elseif length(rule[:words]) > 0
+            @warn "A unhandel word in a conditional tag was observed." word = rule[:words]
+        else
+            union!(hours, h)
+        end
+    end
+    return hours
 end
