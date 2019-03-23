@@ -66,9 +66,10 @@ function parseonewayconditional(onewayconditional::AbstractString)::Dict
         end
         value = condition[ck][:value]
         rule = condition[ck][:rules][:rule1]
-        
+
         uvweight = repeat(Union{Real,Missing}[missing], 168)
         vuweight = repeat(Union{Real,Missing}[missing], 168)
+
         if value != "yes"
             vuweight[rule[:hoursofweek] .+ 1] .= Inf
         elseif value != "-1"
