@@ -162,7 +162,7 @@ function parsemaxspeedconditional(
     for c = condikeys
         condi = conditions[c]
         value = maxspeednumber(condi[:value], maxspeedword)
-        hours = conditionhursofweek(condi[:rules])
+        hours = maxspeedconditionhoursofweek(condi[:rules])
         maxspeed[hours .+ 1] .=  value
     end
 
@@ -249,24 +249,23 @@ end
 
 """ Join rules to hours of week
 """
-function conditionhursofweek(rules)
+function maxspeedconditionhoursofweek(rules)
     ruleskeys = collect(keys(rules))
 
     hours = Integer[]
     # one condition with r rules
     for r = ruleskeys
         rule = rules[r]
-        h = hoursofweek(rule[:hoursofday], rule[:daysofweek], rule[:specialdays])
         if rule[:words] == ["off"]
-            setdiff!(hours, h)
+            setdiff!(hours, rule[:hoursofweek])
         elseif rule[:words] == ["signal"] || rule[:words] == ["wet"]
             # leave `hours` as is
         elseif length(rule[:words]) > 0
             @warn "A unhandel word in a conditional tag was observed." word = rule[:words]
         else
-            union!(hours, h)
+            union!(hours, rule[:hoursofweek])
         end
     end
-    
+
     return hours
 end
