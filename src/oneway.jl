@@ -1,125 +1,97 @@
+const OnewayDict = Dict{Symbol,Union{Real,Missing,Array{Union{Real,Missing},1}}}
+
+
 """ Interpretes the oneway tags of a OSM way object. Returns an array of strings.
 """
-function onewayinterpreter(way::Dict)::AbstractArray{AbstractString, 1}
+function oneway(way::Dict)::Dict
     if way["type"] != "way"
-        throw(ArgumentError("`way` must be an OSM way object."))
+        throw(ArgumentError("`way` must be an OSM way object.") )
     end
     
     tags = get(way, "tags", "_")
     if tags != "_"
         oneway = get(tags, "oneway", "_")
-        onewayconditional = get(tags, "oneway:conditional", "_")
+         onewayconditional = get(tags, "oneway:conditional", "_")
         if onewayconditional != "_"
-            varoneway = onewayconditionalinterpreter(onewayconditional)
-            out = varoneway[:oneway]
+            # interpret conditional oneway tag
+            out = parseonewayconditional(onewayconditional)
             # ckeck if oneway and oneway:conditional match
-            if !((out == ["h", "->", "<-"] && oneway == "reversible") ||
-                (out == ["dh", "->", "<>"] && (oneway == "no" || oneway == "_")))
+            if !(oneway == "reversible" || (oneway == "no" || oneway == "_") )
                 @warn "The `oneway` and `oneway:conditional` tag are conflicting." oneway = oneway condition = out
             end
-        elseif oneway == "yes"
-            out =  ["->"]
-        elseif oneway == "-1"
-            out =  ["<-"]
+
+        # common streets
         elseif oneway == "no" || oneway == "alternating"
-            out = ["<>"]
-        elseif oneway == "reversible" # if a street is reversible but has not condition drop it
-            out = ["x"]
-            # if not marked as oneway but one of the following tags is given, make as oneway
+            out = Dict{Symbol, Dict}(:uv => OnewayDict(:weight => missing),
+                                     :vu => OnewayDict(:weight => missing) )
+
+        # oneway streets
+        elseif oneway == "yes"
+            out = Dict{Symbol, Dict}(:uv => OnewayDict(:weight => missing))
+        elseif oneway == "-1"
+            out = Dict{Symbol, Dict}(:vu => OnewayDict(:weight => missing))
+        elseif oneway == "reversible"
+            out = Dict{Symbol, Dict}()
+            @warn "A `way` with a `reversible` tag but without a `oneway:conditional` tag was discovered, it is ignored." ID=way["id"]
+        
+        # if not marked as oneway but one of the following tags is given, it is oneway
         elseif oneway == "_" && any(get(tags, "junction", "_") .== ["roundabout", "circular"])
-            out = ["->"]
+            out = Dict{Symbol, Dict}(:uv => OnewayDict(:weight => missing))
         elseif oneway == "_" && get(tags, "highway", "_") == "motorway"
-            out = ["->"]
+            out = Dict{Symbol, Dict}(:uv => OnewayDict(:weight => missing))
         elseif oneway == "_"
-            out = ["<>"]
+            out = Dict{Symbol, Dict}(:uv => OnewayDict(:weight => missing),
+                                     :vu => OnewayDict(:weight => missing))
         else
-            out = ["<>"]
-            @warn "An unhandled oneway tag was discovered it is handled as `oneway=no`." ID=way["id"]
+            out = Dict{Symbol, Dict}()
+            @warn "An unhandled oneway tag was discovered therefore the according way is ignored." ID=way["id"]
         end
     else
-        out = ["<>"]
-        @warn "A `way` object without `tags` was discovered it is handled as`oneway=no`." ID=way["id"]
+        out = Dict{Symbol, Dict}()
+        @warn "A `way` object without `tags` is discovered it is ignored." ID=way["id"]
     end
 
     return out
 end
+
 
 """ Interpretes the oneway:conditional part of the oneway information. Returns a dictinary.
 """
-function onewayconditionalinterpreter(onewayconditional::AbstractString)::Dict
+function parseonewayconditional(onewayconditional::AbstractString)::Dict
     condition = parseconditionaltag(onewayconditional)
     condikeys = collect(keys(condition))
-    out = Dict()
-    if length(condikeys) == 1
-        # oneway or twoway
-        condi1 = condition[condikeys[1]] 
-        condi1keys = collect(keys(condi1))
-        if length(condi1keys) == 2
-            if condi1[:value] != "yes"
-                @warn "A `oneway:conditional` tag containing one rule, where the value is not `yes`." value = condi1[:value]
-            end
-            rule = condi1[:rule1]
-            day, hour = onewayruleinterpreter(condi1[:rule1], true)
-            out[:hoursofday] = hour
-            if length(day) > 0
-                out[:daysofweek] = day
-                out[:oneway] = ["dh", "->", "<>"]
-            else
-                out[:oneway] = ["h", "->", "<>"]
-            end
-        else
+    for ck = condikeys
+        if length(collect(keys(condition[ck][:rules]))) > 1
             @error "Handling `oneway:conditional` with more the one rule per condition is not implemented." condition = onewayconditional
+        end
+        value = condition[ck][:value]
+        rule = condition[ck][:rules][:rule1]
+
+        uvweight = repeat(Union{Real,Missing}[missing], 168)
+        vuweight = repeat(Union{Real,Missing}[missing], 168)
+
+        if value != "yes"
+            vuweight[rule[:hoursofweek] .+ 1] .= Inf
+        elseif value != "-1"
+            uvweight[rule[:hoursofweek] .+ 1] .= Inf
+        else
+            @error "`one way:conditional` tags with following value, are not supported." value = value
         end
 
-    elseif length(condikeys) == 2
-        # reversal oneway
-        condi1 = condition[condikeys[1]] 
-        condi1keys = collect(keys(condi1))
-        if length(condi1keys) == 2
-            if condi1[:value] != "yes"
-                @warn "A `oneway:conditional` tag where the value of the first rule is not `yes`." value = condi1[:value]
-            end
-            out[:hoursofday1] = onewayruleinterpreter(condi1[:rule1])
-        else
-            @error "Handling `oneway:conditional` with more the one rule per condition is not implemented." condition = onewayconditional
-        end
-        condi2 = condition[condikeys[2]] 
-        condi2keys = collect(keys(condi2))
-        if length(condi2keys) == 2
-            if condi2[:value] != -1
-                @warn "A `oneway:conditional` tag where the value of the second rule is not `-1`." value = condi1[:value]
-            end
-            out[:hoursofday2] = onewayruleinterpreter(condi2[:rule1])
-        else
-            @error "Handling `oneway:conditional` with more the one rule per condition is not implemented." condition = onewayconditional
-        end
-        if length(Set([out[:hoursofday1]; out[:hoursofday2]])) == 24
-            out[:oneway] = ["h", "->", "<-"] 
-        else
-            @warn "It is expected that a reversible oneway tags covers 24 hours, which is not the case here." condition = onewayconditional
-        end
     end
+    if all(uvweight .=== missing)
+        uvweight = missing
+    elseif all(uvweight .=== Inf)
+        uweight = Inf
+    end
+    if all(vuweight .=== missing)
+        vuweight = missing
+    elseif all(vuweight .=== Inf)
+        vuweight = Inf
+    end
+    out = Dict{Symbol, Dict}(:uv => OnewayDict(:weight => uvweight),
+                             :vu => OnewayDict(:weight => vuweight) )
+
     return out
-
 end
 
-""" Interpretes the condition time of a oneway conditional.
-"""
-function onewayruleinterpreter(rule::Dict, days::Bool=false)::AbstractArray 
-    if length(rule[:words]) > 0 || 
-            length(rule[:specialdays]) > 0
-        throw(ErrorException("Special conditions are not implemented: $rule"))
-    elseif length(rule[:hoursofday]) > 0
-        
-        hoursofday = rule[:hoursofday]
-
-        if days
-            daysofweek = rule[:daysofweek]
-            return [daysofweek, hoursofday]
-        else
-            return hoursofday
-        end
-    else
-        throw(ErrorException("A time condition is expected to be present."))
-    end
-end
