@@ -1,4 +1,6 @@
 using OpenStreetMapGraphs, Test
+# execute test with:
+# using Pkg; Pkg.test("OpenStreetMapGraphs")
 
 function tests()
   @testset "load_save" begin

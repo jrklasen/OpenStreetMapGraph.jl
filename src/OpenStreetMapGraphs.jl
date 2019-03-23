@@ -15,4 +15,6 @@ include("load_save.jl")
 include("oneway.jl")
 include("maxspeed.jl")
 
+include("parse_tag.jl")
+
 end # module
