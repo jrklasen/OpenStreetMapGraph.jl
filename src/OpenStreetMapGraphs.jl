@@ -10,12 +10,12 @@ import Geodesy
 export overpassquery, overpass
 export oneway
 export maxspeed
-export haversine
+export osmgraph
 
 include("loadsave.jl")
 include("oneway.jl")
 include("maxspeed.jl")
 include("parsetag.jl")
-include("construct_graph.jl")
+include("osmgraph.jl")
 
 end # module
