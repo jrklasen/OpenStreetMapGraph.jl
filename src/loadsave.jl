@@ -3,7 +3,9 @@
 # https://wiki.openstreetmap.org/wiki/Map_Features
 
 """
-Generate a Overpass QL query.
+Generate a Overpass QL query. See:
+https://wiki.openstreetmap.org/wiki/Overpass_API/Overpass_QL
+
 
 # Arguments
 - `latitudenorth::Float64`: The northern boundary of the region to query.
@@ -15,38 +17,38 @@ Generate a Overpass QL query.
 - `output::String = "json"`: Overpass output format, so far only "json" implemented.
 """
 function overpassquery(latitudesouth::Float64, longitudewest::Float64, latitudenorth::Float64, longitudeeast::Float64;
-                       queryname::String = "cardrive", timeout::Integer = 600, output::String = "json")::String
-    bbox = (latitudesouth, longitudewest, latitudenorth, longitudeeast)
+                       queryname::String="cardrive", timeout::Integer=600, output::String = "json")::String
     
     if queryname === "cardrive" # a overpass query optimized for car routing
         query = """
-        [out:$output][timeout:$timeout];
+        [out:$output]
+        [timeout:$timeout]
+        [bbox:$latitudesouth,$longitudewest,$latitudenorth,$longitudeeast];
         (
             way["highway"]
                 ["area"!~"yes"]
                 ["highway"!~"cycleway|footway|path|pedestrian|steps|track|corridor|
-                  proposed|construction|bridleway|abandoned|platform|raceway|service"]
+                    proposed|construction|bridleway|abandoned|platform|raceway|service"]
                 ["motor_vehicle"!~"no|privat|delivery|destination|customers|agricultural|forestry"]
                 ["motorcar"!~"no|privat|designated|delivery|destination|customers|agricultural|forestry"]
                 ["vehicle"!~"no|privat|designated|delivery|destination|customers|agricultural|forestry"]
-                ["access"!~"no|privat|designated|delivery|destination|customers|agricultural|forestry"]
-                $bbox;
+                ["access"!~"no|privat|designated|delivery|destination|customers|agricultural|forestry"];
             way["highway"]
-                ["service"~"parking|parking_aisle"]
-                $bbox;
-            relation["restriction"]$bbox;
-            relation["restriction:motor_vehicle"]$bbox;
-            relation["restriction:motorcar"]$bbox;
-            relation["restriction:vehicle"]$bbox;
-            relation["restriction:conditional"]$bbox;
-            relation["restriction:motor_vehicle:conditional"]$bbox;
-            relation["restriction:motorcar:conditional"]$bbox;
-            relation["restriction:vehicle:conditional"]$bbox;
-        );
-        (._;>;);
+                ["service"~"parking|parking_aisle"];
+        )->.streets_network;
+        (
+            rel(bw)["restriction"];
+            rel(bw)["restriction:motor_vehicle"];
+            rel(bw)["restriction:motorcar"];
+            rel(bw)["restriction:vehicle"];
+            rel(bw)["restriction:conditional"];
+            rel(bw)["restriction:motor_vehicle:conditional"];
+            rel(bw)["restriction:motorcar:conditional"];
+            rel(bw)["restriction:vehicle:conditional"];
+        )->.turn_restrictions;
+        ((.streets_network; .turn_restrictions;);>;);
         out body;
         """
-            # relation[~"^restriction.*\$"~"."]$bbox;
     else
         query = ""
         @warn "Not yet implemented"
@@ -67,5 +69,6 @@ function overpass(query::String)::Dict
     end
     str =  String(HTTP.get("https://overpass-api.de/api/interpreter", body=query).body)
     data = JSON.parse(str)
+    
     return data
 end
