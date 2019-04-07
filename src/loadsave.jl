@@ -16,9 +16,15 @@ https://wiki.openstreetmap.org/wiki/Overpass_API/Overpass_QL
 - `timeout::Integer = 600`: Overpass timeout.
 - `output::String = "json"`: Overpass output format, so far only "json" implemented.
 """
-function overpassquery(latitudesouth::Float64, longitudewest::Float64, latitudenorth::Float64, longitudeeast::Float64;
-                       queryname::String="cardrive", timeout::Integer=600, output::String = "json")::String
-    
+function overpassquery(
+        latitudesouth::Float64, 
+        longitudewest::Float64, 
+        latitudenorth::Float64, 
+        longitudeeast::Float64;
+        queryname::String="cardrive", 
+        timeout::Integer=600, 
+        output::String = "json"
+    )::String
     if queryname === "cardrive" # a overpass query optimized for car routing
         query = """
         [out:$output]

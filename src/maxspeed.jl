@@ -9,12 +9,12 @@ maxspeedword = Dict(
     :trunk => 100, 
     :urban => 50, 
     :bicycle_road => 30, 
-    :walk => 7,
-    :living_street => 7
+    :walk => 5,
+    :living_street => 5
 )
 
 # A dictionary of speed limits for `highway` types (in this case for germany)
-highwaymaxspeed = Dict(
+maxspeedhighway = Dict(
     :rural => Dict(
         :motorway => 130, 
         :link => 80, 
@@ -24,7 +24,7 @@ highwaymaxspeed = Dict(
         :tertiary => 100, 
         :unclassified => 100, 
         :residential => 100, 
-        :living_street => 7,
+        :living_street => 5,
         :service => 30
     ),
     :urban => Dict(
@@ -36,72 +36,62 @@ highwaymaxspeed = Dict(
         :tertiary => 50, 
         :unclassified => 50, 
         :residential => 50, 
-        :living_street => 7,
+        :living_street => 5,
         :service => 30
     )
 )
 
 
 """for now we ignore special days  
-hour per week granularity
+outputs hour per week granularity
 """
 function maxspeed(
-        way, 
-        maxspeedword=maxspeedword, 
+        tags;
         urban=true, 
-        highwaymaxspeed=highwaymaxspeed
-    )::Dict{Symbol, Union{AbstractArray, Real}}
-    if way["type"] != "way"
-        throw(ArgumentError("`way` must be an OSM way object."))
+        maxspeedword=maxspeedword, 
+        maxspeedhighway=maxspeedhighway
+    )::Dict{Symbol, Union{Array, Real}}
+    maxspeed = parsemaxspeed(
+        tags,
+        direction="both", 
+        urban=urban, 
+        maxspeedword=maxspeedword, 
+        maxspeedhighway=maxspeedhighway 
+    )
+    maxspeedtagconditional = get(tags, "maxspeed:conditional", "_")
+    if maxspeedtagconditional != "_"
+        if maxspeed == nothing
+            maxspeed = missing
+        end
+        maxspeed = parsemaxspeedconditional(maxspeedtagconditional, maxspeed=maxspeed)
+        if length(unique(maxspeed)) == 1
+            maxspeed = maxspeed[1]
+        end
     end
-    
-    tags = get(way, "tags", "_")
-    if tags != "_"
-        maxspeed = parsemaxspeed(
-            tags, 
-            maxspeedword,
-            "both", 
-            urban, 
-            highwaymaxspeed
-        )
-        maxspeedtagconditional = get(tags, "maxspeed:conditional", "_")
-        if maxspeedtagconditional != "_"
-            if maxspeed == nothing
-                maxspeed = missing
-            end
-            maxspeed = parsemaxspeedconditional(maxspeedtagconditional, maxspeed)
-            if length(unique(maxspeed)) == 1
-                maxspeed = maxspeed[1]
-            end
-        end
-        uvmaxspeed = parsemaxspeed(
-            tags, 
-            maxspeedword, 
-            "forward", 
-            urban, 
-            highwaymaxspeed
-        )
-        vumaxspeed = parsemaxspeed(
-            tags, 
-            maxspeedword, 
-            "backward", 
-            urban, 
-            highwaymaxspeed
-        )
+    uvmaxspeed = parsemaxspeed(
+        tags, 
+        direction="forward",
+        urban=urban,
+        maxspeedword=maxspeedword, 
+        maxspeedhighway=maxspeedhighway
+    )
+    vumaxspeed = parsemaxspeed(
+        tags,
+        direction="backward", 
+        urban=urban,
+        maxspeedword=maxspeedword, 
+        maxspeedhighway=maxspeedhighway
+    )
 
-        out = Dict{Symbol, Union{AbstractArray, Real}}()
-        if uvmaxspeed != nothing
-            out[:uvmaxspeed] = uvmaxspeed
-        end
-        if vumaxspeed != nothing
-            out[:vumaxspeed] = vumaxspeed
-        end
-        if maxspeed != nothing
-            out[:maxspeed] = maxspeed
-        end
-    else
-        out = Dict{Symbol, Union{AbstractArray, Real}}()
-        @warn "A `way` object without `tags` is discovered it is ignored." ID=way["id"]
+    out = Dict{Symbol, Union{Array, Real}}()
+    if uvmaxspeed != nothing
+        out[:uvmaxspeed] = uvmaxspeed
+    end
+    if vumaxspeed != nothing
+        out[:vumaxspeed] = vumaxspeed
+    end
+    if maxspeed != nothing
+        out[:maxspeed] = maxspeed
     end
 
     return out
@@ -111,11 +101,11 @@ end
 """ Parse tags which give the maxspeed of a way
 """
 function parsemaxspeed(
-        tags, 
-        maxspeedword=maxspeedword, 
+        tags; 
         direction="both", 
         urban=true, 
-        highwaymaxspeed=highwaymaxspeed
+        maxspeedword=maxspeedword, 
+        maxspeedhighway=maxspeedhighway
     )::Union{Real, Nothing}
     # if direction is given check for directional maxspeed
     if direction == "both"
@@ -127,7 +117,7 @@ function parsemaxspeed(
     for tag = ["maxspeed", "source:maxspeed", "zone:maxspeed"]
         maxspeedtag = get(tags, tag * direction, "_")
         if maxspeedtag != "_"
-            maxspeed = maxspeednumber(maxspeedtag, maxspeedword)
+            maxspeed = maxspeednumber(maxspeedtag, maxspeedword=maxspeedword)
             if maxspeed != nothing
 
                 return maxspeed
@@ -137,7 +127,7 @@ function parsemaxspeed(
     
     highwaytag = get(tags, "highway", "_")
     if highwaytag != "_" && length(direction) == 0
-        maxspeed = highwaymaxspeenumber(highwaytag, urban, highwaymaxspeed)
+        maxspeed = highwaymaxspeenumber(highwaytag, urban, maxspeedhighway)
         if maxspeed != nothing
 
             return maxspeed
@@ -151,7 +141,7 @@ end
 """ Parse conditional tags which give the maxspeed of a way
 """
 function parsemaxspeedconditional(
-        maxspeedconditional::AbstractString, 
+        maxspeedconditional::AbstractString;
         maxspeed::Union{Real,Missing}=missing,
         maxspeedword::Dict=maxspeedword
     )
@@ -161,7 +151,7 @@ function parsemaxspeedconditional(
     maxspeed = repeat(Union{Real,Missing}[maxspeed], 168)
     for c = condikeys
         condi = conditions[c]
-        value = maxspeednumber(condi[:value], maxspeedword)
+        value = maxspeednumber(condi[:value], maxspeedword=maxspeedword)
         hours = maxspeedconditionhoursofweek(condi[:rules])
         maxspeed[hours .+ 1] .=  value
     end
@@ -173,7 +163,7 @@ end
 """ Maxspeed tag as number
 """
 function maxspeednumber(
-        tag::AbstractString, 
+        tag::AbstractString; 
         maxspeedword=maxspeedword
     )::Union{Real, Nothing}
     regexmaxspeednumber = r"(\d+)"
@@ -225,11 +215,11 @@ end
 function highwaymaxspeenumber(
         tag::AbstractString, 
         urban=true, 
-        highwaymaxspeed=highwaymaxspeed
+        maxspeedhighway=maxspeedhighway
     )::Union{Real, Nothing}
     condkey = urban ? :urban : :rural
     
-    wordkeys = collect(keys(highwaymaxspeed[condkey]))
+    wordkeys = collect(keys(maxspeedhighway[condkey]))
     wordkeysstr = string.(wordkeys)
 
     regexhighway = Regex("(" * join(wordkeysstr, "|") * ")")
@@ -242,7 +232,7 @@ function highwaymaxspeenumber(
         ki = findall(word.match .== wordkeysstr)[1]
         k = wordkeys[ki]
 
-        return highwaymaxspeed[condkey][k]
+        return maxspeedhighway[condkey][k]
     end
 end
 
