@@ -7,7 +7,11 @@ specialdays = ["PH", "SH"]
 
 Rturns a dictionary of complonents. 
 """
-function parseconditionaltag(tag::AbstractString)::Dict{Symbol, Dict}
+function parseconditionaltag(
+        tag::String;
+        daysofweek=daysofweek,
+        specialdays=specialdays
+    )::Dict{Symbol, Dict}
     # regex for values: find value-parts of string
     regexvalue = r"\;?\s?(\-?[[:alnum:]\_\.]*)\s?@"
     values = collect(m.captures[1] for m = eachmatch(regexvalue, tag))
@@ -39,9 +43,9 @@ function parseconditionaltag(tag::AbstractString)::Dict{Symbol, Dict}
     out = Dict{Symbol, Dict}()
     count = 1
     for (v, c) = zip(values, condis)
-        out[Symbol("condition" * string(count))] =  Dict{Symbol, Union{Dict, AbstractString, Integer}}(
+        out[Symbol("condition" * string(count))] =  Dict{Symbol, Union{Dict, String, Integer}}(
             :value => v, 
-            :rules => parsecondition(c)
+            :rules => parsecondition(c, daysofweek=daysofweek, specialdays=specialdays)
         )
 
         count += 1
@@ -53,7 +57,11 @@ end
 
 """ Parse condition part of a conditional tag.  Returns a rules as dictionary.
 """
-function parsecondition(condition::AbstractString)::Dict{Symbol, Dict}
+function parsecondition(
+        condition::String;
+        daysofweek=daysofweek,
+        specialdays=specialdays
+    )::Dict{Symbol, Dict}
     condis = strip.(split(condition, ';'))
 
     out = Dict{Symbol, Dict}()
@@ -61,11 +69,11 @@ function parsecondition(condition::AbstractString)::Dict{Symbol, Dict}
     for token = condis
         # todo: capture AND !!!!!!!
         # haven't seen it in the tags of intrest, but it is part of the syntax
-        days = ruledays(token)
+        days = ruledays(token, daysofweek=daysofweek, specialdays=specialdays)
         hours = rulehours(token)
-        daytimeword = Dict{Symbol, Union{AbstractArray, Dict}}(
+        daytimeword = Dict{Symbol, Union{Array, Dict}}(
             :words => rulewords(token), 
-            :hoursofweek => hoursofweek(hours, days[1], days[2])
+            :hoursofweek => hoursofweek(hours, days[:days], days[:specialdays])
         )
         out[Symbol("rule" * string(count))] = daytimeword
 
@@ -78,7 +86,9 @@ end
 
 """ Parse time (hour of day) component of the condition token as array of int.
 """
-function rulehours(token::AbstractString)::AbstractArray{UInt8}
+function rulehours(
+        token::AbstractString
+    )::Array{UInt8}
     token = replace(token, "24:00" => "00:00")
     # one or more time intervals
     regextime = r"(\d{2}:\d{2})-(\d{2}:\d{2})"
@@ -110,7 +120,11 @@ end
 """ Parse the day component of the condition token. Return dict containng a array 
 of `daysofweek` as numbers between 1  (Mo) and 7 (Su) and `specialdays` array of strings.
 """
-function ruledays(token::AbstractString)::AbstractArray
+function ruledays(
+        token::AbstractString;
+        daysofweek=daysofweek,
+        specialdays=specialdays
+    )::Dict
     regexdayint = r"(Mo|Tu|We|Th|Fr|Sa|Su)-(Mo|Tu|We|Th|Fr|Sa|Su)"
     dayinterval = match(regexdayint, token)
     if dayinterval != nothing
@@ -141,8 +155,12 @@ function ruledays(token::AbstractString)::AbstractArray
             end
         end
     end
+    out = Dict(
+        :days => days, 
+        :specialdays => sdays
+    )
 
-    return[days, sdays]
+    return out
 end
 
 
@@ -150,7 +168,7 @@ end
 """
 function rulewords(
         token::AbstractString
-    )::AbstractArray{AbstractString, 1}
+    )::Array{String, 1}
     regexword = r"(off|signal|wet)"
     words = collect(string(m.captures[1]) for m = eachmatch(regexword, token))
 
@@ -161,10 +179,10 @@ end
 """ Use day of week and hour of day and return the hour of week
 """
 function hoursofweek(
-        hours::Array{<:Integer,1}=UInt8[],
-        days::Array{<:Integer,1}=UInt8[], 
+        hours::Array{<:UInt8,1}=UInt8[],
+        days::Array{<:UInt8,1}=UInt8[], 
         specialdays::Array{<:AbstractString,1}=String[]
-    )::Array{Integer,1}
+    )::Array{UInt8,1}
     nd = length(days)
     nh = length(hours)
     nsd = length(specialdays)

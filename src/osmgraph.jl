@@ -1,75 +1,3 @@
-function osmgraph(osmdata)
-    # find number of nodes in OSM data
-    nnodes = 0
-    for elem in osmdata["elements"]
-        if elem["type"] == "node"
-            nnodes += 1
-        end
-    end
-    # creat graph (default weight is Inf)
-    graph = MetaGraphs.MetaDiGraph(nnodes, Inf)
-
-    # a dict which maps graph-indeces to the according OSM-ids
-    nodeids = Dict{Integer, Integer}()
-    c = 1
-    for elem = osmdata["elements"]
-        if elem["type"] == "node"
-            # add meta data to nodes
-            MetaGraphs.set_props!(graph, c, 
-                Dict(
-                    :id => elem["id"],
-                    :coordinates => Geodesy.LLA(elem["lat"], elem["lon"], 0.0)
-                )
-            )
-            nodeids[elem["id"]] = c
-            c += 1
-        end
-    end
-
-    # add edges and edge meta data
-    for elem = data["elements"]
-        if elem["type"] == "way"
-
-            di = oneway(elem)
-            nid = get(tags, "nodes", "_")
-            if nodes != "_"
-                nodes = [nodeids[i] for i = nid]
-                if di = "<>"
-                    for u, v = zip(nodes[1:(end-1)], nodes[2:end])
-                        add_edge!(graph, u, v)
-                        #set_prop!(graph, u, v, :weight)
-                        add_edge!(graph, v, u)
-                        #set_prop!(graph, v, u, :weight)
-                    end
-                elseif nodes != "_" && di = "->"
-                    for u, v = zip(nodes[1:(end-1)], nodes[2:end])
-                        add_edge!(graph, u, v)
-                        #set_prop!(graph, u, v, :weight)
-                    end
-                elseif nodes != "_" && di = "<-"
-                    for u, v = zip(nodes[1:(end-1)], nodes[2:end])
-                        add_edge!(graph, v, u)
-                        #set_prop!(graph, v, u, :weight)
-                    end
-                elseif nodes != "_" && di = ["h", "->", "<-"]
-                    for u, v = zip(nodes[1:(end-1)], nodes[2:end])
-                        add_edge!(graph, u, v)
-                        #set_prop!(graph, u, v, :weight)  #todo: at time condition
-                        #set_prop!(graph, u, v, :condition)
-                        add_edge!(graph, v, v)
-                        #set_prop!(graph, , 2, :weight)
-                        #set_prop!(graph, u, v, :condition)
-                    end
-                end
-           end
-        end
-    end
- 
-
-
-    return graph, nodeids
-end
-
 # TAGS = Set([# https://wiki.openstreetmap.org/wiki/Key:name
 #             "name",
 #             # https://wiki.openstreetmap.org/wiki/Key:highway
@@ -93,55 +21,151 @@ end
 #             # https://wiki.openstreetmap.org/wiki/Key:surface
 #             "surface", 
 #             "bridge", "tunnel"])
-        
-# function refineways(osmdata)
-    
-#     allways = Dict{String,Dict}()
-    
-#     for elem in osmdata["elements"]
-#         if elem["type"] == "way"
-#             allways[string(elem["id"])] = Dict{String, Any}("nodes" => [string(i) for i in elem["nodes"]])
-#             tags = get(elem, "tags", "_")
-#             if tags != "_"
-#                 for t in intersect(keys(tags), TAGS)
-#                     allways[string(elem["id"])][t] = tags[t]
-#                 end
-#             end
-#         end
-        
-#     end
-
-#     return allways
-# end
 
 # # https://wiki.openstreetmap.org/wiki/Relation:restriction
 # TURN_RESTRICTION = ["no_right_turn", "no_left_turn", "no_u_turn", "no_straight_on", 
 #                     "only_right_turn", "only_left_turn", "only_straight_on", "no_entry", "no_exit"] 
-# function refinerelations(osmdata)
-        
-#     allrelations = Dict{String, Dict}()
-    
-#     for elem in osmdata["elements"]
-#         if elem["type"] == "relation"
-#             memb = elem["members"]
-#             allrelations[string(elem["id"])] = Dict{String, String}(
-#                 "from" => string(memb[1]["ref"]),
-#                 "to" => string(memb[2]["ref"]),
-#                 "via" => string(memb[3]["ref"]),
-#                 "restriction" => elem["tags"]["restriction"]
-#             )
-#         end
-        
-#     end
 
-#     return allrelations
-# end
+function osmgraph(
+        osmdata::Dict
+    )
+    # find number of nodes in OSM data
+    nnodes = 0
+    for elem in osmdata["elements"]
+        type = get(elem, "type", "_")
+        if type == "node"
+            nnodes += 1
+        end
+    end
+    # creat graph (default weight is Inf)
+    graph = MetaGraphs.MetaDiGraph(nnodes, 0.0)
 
-# NODE
-# - ID
-# - [TURN_CONSTREINS]
-#     - FRAM_EDGE
-#         - TO_EDGES
-#         - WEIGHT
-#         - [..]
-#     - [...]
+    # a dict which maps graph-indeces to the according OSM-ids
+    nodeidmap = Dict{Integer, Integer}()
+    c = 1
+    for elem = osmdata["elements"]
+        if elem["type"] == "node"
+            # add meta data to nodes
+            MetaGraphs.set_props!(graph, c, 
+                Dict(
+                    :id => elem["id"],
+                    :coordinates => Geodesy.LLA(elem["lat"], elem["lon"], 0.0)
+                )
+            )
+            nodeidmap[elem["id"]] = c
+            c += 1
+        end
+    end
+
+    # add edge and edge meta data
+    for elem = osmdata["elements"]
+        type = get(elem, "type", "_")
+        if type == "way"
+
+            directional = osmway(elem)
+            dikeys = keys(directional)
+
+            # all nodes which are conected by the way, can be more then two
+            osmnodeids = get(elem, "nodes", "_")
+            osmwayid = get(elem, "id", "_")
+
+            if osmnodeids != "_"
+                nodeids = [nodeidmap[i] for i = osmnodeids]
+                
+                for (u, v) = zip(nodeids[1:(end-1)], nodeids[2:end])
+                    dist = Geodesy.distance(
+                        MetaGraphs.props(graph, u)[:coordinates],
+                        MetaGraphs.props(graph, v)[:coordinates]
+                    )
+
+                    if any(dikeys .== :uv)
+                        MetaGraphs.add_edge!(graph, u, v)
+                        ms = get(directional[:uv], :maxspeed, -1)
+                        MetaGraphs.set_prop!(graph, u, v, :id, osmwayid)
+                        MetaGraphs.set_prop!(graph, u, v, :maxspeed, ms)
+                        MetaGraphs.set_prop!(graph, u, v, :distance, dist)
+                        MetaGraphs.set_prop!(graph, u, v, :weight, dist ./ (ms .* 1000 ./ 3600)) # make the array thing working us one elemet, cleanup the missing stuff!!!!!!
+                    elseif any(dikeys .== :vu)
+                        MetaGraphs.add_edge!(graph, v, u)
+                        ms = directional[:vu][:maxspeed]
+                        MetaGraphs.set_prop!(graph, v, u, :id, osmwayid)
+                        MetaGraphs.set_prop!(graph, v, u, :maxspeed, ms)
+                        MetaGraphs.set_prop!(graph, v, u, :distance, dist)
+                        MetaGraphs.set_prop!(graph, v, u, :weight, dist ./ (ms .* 1000 ./ 3600))
+                    end
+                end
+            end
+        end
+    end
+
+    return graph
+end
+
+
+function osmway(
+        way::Dict
+    )::Dict{Symbol,Dict}
+    if way["type"] != "way"
+        throw(ArgumentError("`way` must be an OSM way object."))
+    end
+    out = Dict{Symbol,Dict}()
+
+    tags = get(way, "tags", "_")
+    if tags != "_"
+        # directional
+        directional = oneway(tags)
+        directkeys = collect(keys(directional))
+
+        # u -> v
+        isuv = any(:uv .== directkeys)
+        # v -> u
+        isvu = any(:vu .== directkeys)
+        
+        # maxspeed
+        msdict = maxspeed(tags, urban=true)
+        uvms = get(msdict, :uvmaxspeed, 0)
+        vums = get(msdict, :vumaxspeed, 0)
+        ms = get(msdict, :maxspeed, 0)
+
+        # u -> v direction
+        if isuv 
+            if uvms == 0 && sum(ms) > 0
+                uvms = ms
+            end
+            # if vu exists and is a vector of indices, assign zero maxspeed at this positions, 
+            # in order to block the way
+            if  isvu && length(directional[:vu]) > 0 
+                if length(uvms) == 1
+                    uvms = repeat([uvms], 168)
+                    uvms[directional[:vu] .+ 1] .= 0
+                elseif length(uvms) > 1
+                    uvms[directional[:vu] .+ 1] .= 0
+                end
+            end
+            if sum(uvms) > 0
+                out[:uv] = Dict(:maxspeed => uvms)
+            end
+        end
+        # v -> u direction
+        if isvu 
+            if vums == 0 && sum(ms) > 0
+                vums = ms
+            end
+            # if u -> v exists and is a vector of indices, assign zero maxspeed at this positions, 
+            # in order to block the way
+            if isuv && length(directional[:uv]) > 0
+                if length(vums) == 1
+                    vums = repeat([vums], 168)
+                    vums[directional[:uv] .+ 1] .= 0
+                elseif length(uvms) > 1
+                    vums[directional[:uv] .+ 1] .= 0
+                end
+            end
+            if sum(vums) > 0 
+                out[:vu] = Dict(:maxspeed => vums)
+            end
+        end
+    end
+
+    return out
+end
